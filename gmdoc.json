@@ -20,6 +20,12 @@
         "C++ code injection": "Features/FeatureCppCodeInjection.md"
       }
     },
-    "How to use": "HowToUse.md"
+    "How to use": "HowToUse.md",
+    "Release notes": {
+      "file": "ReleaseNotes/ReleaseNotes.md",
+      "pages": {
+        "0.1.0": "ReleaseNotes/ReleaseNotes0.1.0.md"
+      }
+    }
   }
 }

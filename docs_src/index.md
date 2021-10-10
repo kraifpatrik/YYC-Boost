@@ -9,4 +9,5 @@ during YYC compilation in GameMaker Studio 2.3+.
 ## Contents
 * [Features](./Features.html)
 * [How to use](./HowToUse.html)
+* [Release notes](./ReleaseNotes.html)
 * [Scripting API](./ScriptingAPI.html)
