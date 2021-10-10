@@ -1,0 +1,25 @@
+{
+  "_version": 2,
+  "project": "./YYCBoost_GML/YYCBoost.yyp",
+  "project_name": "YYC Boost",
+  "version": "0.1.0",
+  "title": "YYC Boost Docs",
+  "author": "Patrik Kraif",
+  "prefix": "yyc_",
+  "analytics": "",
+  "api": {
+    "rating": "/api/v1/page_rating"
+  },
+  "toc": {
+    "YYC Boost Docs": "index.md",
+    "Features": {
+      "file": "Features/Features.md",
+      "pages": {
+        "Multithreading": "Features/FeatureMultithreading.md",
+        "C++ types of local variables": "Features/FeatureCppTypesOfLocalVariables.md",
+        "C++ code injection": "Features/FeatureCppCodeInjection.md"
+      }
+    },
+    "How to use": "HowToUse.md"
+  }
+}

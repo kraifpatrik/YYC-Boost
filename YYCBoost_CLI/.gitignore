@@ -1,0 +1,18 @@
+# local
+config.json
+
+# vs code
+/.vscode/
+
+# virtualenv
+/env/
+
+# python
+__pycache__/
+
+# pyinstaller
+/build/
+/dist/
+*.spec
+
+!.gitkeep
