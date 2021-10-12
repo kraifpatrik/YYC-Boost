@@ -3,6 +3,10 @@
 
 [![License](https://img.shields.io/github/license/kraifpatrik/YYCBoost)](LICENSE)
 
+**WARNING: This tool is currently in an early stage of development and it is not
+guaranteed to work in all projects/cases! Use at your own risk! Currently only
+the Windows YYC target is supported!**
+
 # Table of Contents
 * [Features](#features)
 * [Documentation](#documentation)
@@ -101,4 +105,5 @@ If you like YYC Boost and you would like to support its further development, you
 # Links
 * [Documentation](https://kraifpatrik.com/docs/yycboost)
 * [Donate](https://paypal.me/kraifpatrik/10usd)
+* [Purchase on Marketplace](https://marketplace.yoyogames.com/assets/10363/yyc-boost)
 * [Website](https://kraifpatrik.com)
