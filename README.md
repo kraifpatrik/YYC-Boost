@@ -100,10 +100,10 @@ python.exe setup.py
 This will create a directory `YYCBoost\YYCBoost_CLI\dist` with `yycboost.exe`.
 
 # Support the project
-If you like YYC Boost and you would like to support its further development, you can donate to [paypal.me/kraifpatrik](https://paypal.me/kraifpatrik/10usd).
+If you like YYC Boost and you would like to support its further development, you can donate to [paypal.me/kraifpatrik](https://paypal.me/kraifpatrik/10usd) or purchase the asset from the [Marketplace](https://marketplace.yoyogames.com/assets/10363/yyc-boost).
 
 # Links
 * [Documentation](https://kraifpatrik.com/docs/yycboost)
 * [Donate](https://paypal.me/kraifpatrik/10usd)
-* [Purchase on Marketplace](https://marketplace.yoyogames.com/assets/10363/yyc-boost)
+* [Purchase from the Marketplace](https://marketplace.yoyogames.com/assets/10363/yyc-boost)
 * [Website](https://kraifpatrik.com)
