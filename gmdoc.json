@@ -24,6 +24,7 @@
     "Release notes": {
       "file": "ReleaseNotes/ReleaseNotes.md",
       "pages": {
+        "0.1.1": "ReleaseNotes/ReleaseNotes0.1.1.md",
         "0.1.0": "ReleaseNotes/ReleaseNotes0.1.0.md"
       }
     }
