@@ -101,31 +101,14 @@ if __name__ == "__main__":
         build = None
         path_cpp = sys.argv[1]
     else:
-        # Load or create config
-        save_conf = False
-
-        try:
-            with open(config_fpath) as file:
-                config = json.load(file)
-            build_bff_dir = config["build_bff"]
-            print(f"Loaded {config_fname}")
-        except:
-            save_conf = True
-            config = {}
-
-        if not "build_bff" in config or not build_bff_dir:
-            default = BuildBff.PATH_DEFAULT
-            build_bff_dir = input(
-                "Enter path to the build.bff file [{}]: ".format(default))
-            if not build_bff_dir:
-                build_bff_dir = default
-            config["build_bff"] = build_bff_dir
-            save_conf = True
-
-        if save_conf:
-            with open(config_fpath, "w") as file:
-                json.dump(config, file, indent=2)
-            print("Saved config")
+        # Config
+        config = {}
+        default = BuildBff.PATH_DEFAULT
+        build_bff_dir = input(
+            "Enter path to the build.bff file [{}]: ".format(default))
+        if not build_bff_dir:
+            build_bff_dir = default
+        config["build_bff"] = build_bff_dir
 
         # Load build.bff
         try:
@@ -133,7 +116,7 @@ if __name__ == "__main__":
             print("Loaded build.bff")
         except:
             print("ERROR: Could not load build.bff!")
-            exit(1)
+            sys.exit(1)
 
         # Project info
         path_cpp = build.get_cpp_dir()
@@ -146,7 +129,7 @@ if __name__ == "__main__":
     # Check for permission
     if input("Do you really want to modify the files? [Y/n] ") == "n":
         cprint("Canceled", "magenta")
-        sys.exit()
+        sys.exit(0)
 
     # Copy custom headers
     _cpp_dir = os.path.join(yyc_boost_dir, "cpp")
