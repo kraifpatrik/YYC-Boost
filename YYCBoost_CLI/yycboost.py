@@ -68,7 +68,7 @@ class EventHandler(FileSystemEventHandler):
         self.modified = {}
 
     def on_create(self, event):
-        self.process(event)
+        self._process(event)
 
     def on_modified(self, event):
         self._process(event)

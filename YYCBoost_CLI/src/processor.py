@@ -42,7 +42,7 @@ class Processor(object):
 
         # Remove casts
         cpp_content = re.sub(
-            r"{}\.as\w+\(\)".format(name_cpp), name_cpp, cpp_content)
+            re.escape(name_cpp) + r"\.as\w+\(\)", name_cpp, cpp_content)
 
         if type_ == "bool":
             cpp_content = re.sub(
@@ -98,11 +98,9 @@ class Processor(object):
                     current.code += token.value[5:-2].strip() + "\n"
                 continue
 
-            if token.type == Token.Type.VAR:
+            if token.type == Token.Type.NAME:
+                name = token
                 parser.next()
-                name = parser.consume(_type=Token.Type.NAME)
-                if name is None:
-                    continue
                 comment = parser.consume(_type=Token.Type.COMMENT, _ignore_comments=False)
                 if comment is None:
                     continue
