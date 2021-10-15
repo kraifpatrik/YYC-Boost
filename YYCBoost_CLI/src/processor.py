@@ -11,7 +11,7 @@ REGEX_ANON = re.compile(r"extern YYVAR g_Script_(gml_(?:Script|Object)_\w+)")
 counter = 0
 
 class Processor(object):
-    INCLUDES = """#include "YYCBoost.h"\n"""
+    INCLUDES = """#include "YYCBoost.hpp"\n"""
 
     @staticmethod
     def inject_type(cpp_content, name, type_):

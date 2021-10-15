@@ -51,16 +51,11 @@ function YYC_Task(_func, _arg=undefined) constructor
 		return self;
 	};
 
-	/// @private
 	static Enqueue = function () {
 		gml_pragma("forceinline");
-		global.__yycTaskMutex.Acquire();
-		ds_queue_enqueue(global.__yycTasks, self);
-		global.__yycTaskMutex.Release();
-		global.__yycTaskSemaphore.Release();
+		global.__yycTasks.Enqueue(self);
 	};
 
-	/// @private
 	static Execute = function () {
 		gml_pragma("forceinline");
 		Func(Arg, self);

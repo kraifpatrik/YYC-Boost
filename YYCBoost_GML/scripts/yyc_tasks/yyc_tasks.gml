@@ -6,11 +6,8 @@
 /// Defaults to number of logical CPUs - 1.
 #macro YYC_TASKS_THREAD_COUNT max(yyc_get_cpu_count() - 1, 1)
 
-var _threadCount = YYC_TASKS_THREAD_COUNT;
-
 global.__yycTaskMutex = new YYC_Mutex();
-global.__yycTaskSemaphore = new YYC_Semaphore(0, _threadCount);
-global.__yycTasks = ds_queue_create();
+global.__yycTasks = new YYC_Queue();
 
 if (yyc_is_boost())
 {
@@ -19,11 +16,13 @@ if (yyc_is_boost())
 		yyc_run_in_thread(function () {
 			while (true)
 			{
-				global.__yycTaskSemaphore.Acquire();
-				global.__yycTaskMutex.Acquire();
-				var _task = ds_queue_dequeue(global.__yycTasks);
-				global.__yycTaskMutex.Release();
-				_task.Execute();
+				var _task = global.__yycTasks.Dequeue();
+				if (_task)
+				{
+					_task.Execute();
+				}
+				var _t = current_time;
+				while (current_time - _t < 100) {}
 			}
 		});
 	}
@@ -47,9 +46,9 @@ if (yyc_is_boost())
 function yyc_tasks_update()
 {
 	var _t = get_timer();
-	while (!ds_queue_empty(global.__yycTasks))
+	while (!global.__yycTasks.Empty())
 	{
-		ds_queue_dequeue(global.__yycTasks).Execute();
+		global.__yycTasks.Dequeue().Execute();
 		if ((get_timer() - _t) * 0.001 >= YYC_TASKS_MS_PER_FRAME)
 		{
 			break;

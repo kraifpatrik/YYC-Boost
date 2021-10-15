@@ -1,8 +1,8 @@
-#ifndef __YYC_BOOST_H__
-#define __YYC_BOOST_H__
+#ifndef __THREADING_HPP__
+#define __THREADING_HPP__
 
 #include <YYGML.h>
-#include "windows.h"
+#include <windows.h>
 
 /** Used to pass arguments from script functions into thread functions. */
 struct SThreadArgs
@@ -88,75 +88,4 @@ struct SCPU
 	SThreadArgs *threadArgs = new SThreadArgs(pSelf, pOther, _count, _args); \
 	CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)&SCPU::ThreadFunc, threadArgs, 0, NULL)
 
-struct SMutex
-{
-	static void Create(const char* name)
-	{
-		CreateMutex(NULL, FALSE, TEXT(name));
-	}
-
-	static void Acquire(const char* name)
-	{
-		HANDLE hMutex;
-		hMutex = OpenMutex(
-			NULL,
-			FALSE,
-			TEXT(name));
-		WaitForSingleObject(
-			hMutex,
-			INFINITE);
-		CloseHandle(hMutex);
-	}
-
-	static void Release(const char* name)
-	{
-		HANDLE hMutex;
-		hMutex = OpenMutex(
-			NULL,
-			FALSE,
-			TEXT(name));
-		ReleaseMutex(hMutex);
-		CloseHandle(hMutex);
-	}
-};
-
-struct SSemaphore
-{
-	static void Create(const char* name, int initial, int max)
-	{
-		CreateSemaphore(
-			NULL,
-			initial,
-			max,
-			TEXT(name));
-	}
-
-	static void Acquire(const char* name)
-	{
-		HANDLE hSemaphore;
-		hSemaphore = OpenSemaphore(
-			SEMAPHORE_ALL_ACCESS,
-			FALSE,
-			TEXT(name));
-		WaitForSingleObject(
-			hSemaphore,
-			INFINITE);
-		CloseHandle(hSemaphore);
-	}
-
-	static void Release(const char* name)
-	{
-		HANDLE hSemaphore;
-		hSemaphore = OpenSemaphore(
-			SEMAPHORE_ALL_ACCESS | SEMAPHORE_MODIFY_STATE,
-			FALSE,
-			TEXT(name));
-		ReleaseSemaphore(
-			hSemaphore,
-			1,
-			NULL);
-		CloseHandle(hSemaphore);
-	}
-};
-
-#endif // __YYC_BOOST_H__
+#endif // __THREADING_HPP__
