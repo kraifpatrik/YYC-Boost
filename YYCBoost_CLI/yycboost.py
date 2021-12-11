@@ -9,7 +9,9 @@ import subprocess
 import inspect
 import traceback
 from subprocess import DEVNULL, CREATE_NO_WINDOW
-from multiprocessing import Process, Queue, cpu_count, freeze_support, current_process
+from multiprocessing import (
+    Process, Queue, cpu_count, freeze_support, current_process
+)
 from argparse import ArgumentParser
 from queue import Empty as QueueEmpty
 
@@ -20,17 +22,6 @@ from watchdog.observers import Observer
 from src.build_bff import BuildBff
 from src.processor import Processor
 from src.utils import *
-
-
-def handle_signit(*args, **kwargs):
-    if not current_process().daemon:
-        # To avoid duplicates, only print this message from the parent process. 
-        cprint("Terminating...", "magenta")
-    sys.exit(0)
-
-signal.signal(signal.SIGINT, handle_signit)
-
-queue = Queue()
 
 
 def process_fn(yyc_boost_dir: str, id: int, queue: Queue,
@@ -107,7 +98,8 @@ def parse_args(*args, **kwds):
         def format_help(self):
             help = super(CustomArgumentParser, self).format_help()
             return help.replace('usage: ', 'Usage: ') \
-                       .replace('buildpath PATH', 'buildpath=PATH')
+                       .replace('buildpath PATH', 'buildpath=PATH') \
+                       .replace('timeout SECONDS', 'timeout=SECONDS')
 
     arg_parser = CustomArgumentParser(
         prefix_chars='/-', allow_abbrev=False, add_help=False)
@@ -135,10 +127,17 @@ def parse_args(*args, **kwds):
     )
     main_args.add_argument(
         '-buildpath', dest='build_bff_path', nargs=1, metavar='PATH',
-        help='The path of the "build.bff" file corresponding to the target. '
-             'If not specified, the user is prompted to enter a path on the '
-             'terminal, unless "/auto" is set, in which case the '
-             'default value of "{}" is used.'.format(BuildBff.PATH_DEFAULT),
+        help='The path of the "build.bff" file corresponding to the target. If '
+             'not specified, the user is prompted to enter a path on the '
+             'terminal, unless "/auto" is set, in which case the default value '
+             'of "{}" is used.'.format(BuildBff.PATH_DEFAULT),
+    )
+    main_args.add_argument(
+        '-timeout', dest='timeout', nargs=1, metavar='SECONDS',
+        type=float, default=[300], help='The number of seconds to wait for '
+            '"build.bff" to appear, if it does not already exist, before '
+            'aborting the process. Defaults to 300 seconds, i.e. 5 minutes, '
+            'if not specified.',
     )
 
     other_args = arg_parser.add_argument_group('Positional arguments')
@@ -158,7 +157,15 @@ def parse_args(*args, **kwds):
 
 
 if __name__ == "__main__":
+    queue = Queue()
     freeze_support()
+
+    def handle_sigint(*args, **kwargs):
+        if not current_process().daemon:
+            # To avoid duplicates, only print this message from the parent process. 
+            cprint("Terminating...", "magenta")
+        sys.exit(0)
+    signal.signal(signal.SIGINT, handle_sigint)
 
     args = parse_args()
 
@@ -173,7 +180,7 @@ if __name__ == "__main__":
             new_argv = [sys.executable] + sys.argv
         else:
             # Unable to determine correct command line to relaunch self.
-            cprint('Error: failed to launch background process!', 'red')
+            cprint('ERROR: failed to launch background process!', 'red')
             sys.exit(1)
 
         # Ensure that "/close" and "/auto" are set and "/background" is not
@@ -216,6 +223,9 @@ if __name__ == "__main__":
 
         default = BuildBff.PATH_DEFAULT
         [build_bff_path] = args.build_bff_path or [None]
+        [timeout] = args.timeout
+        time_limit = perf_counter() + timeout
+
         if not build_bff_path and not args.auto:
             build_bff_path = input(
                 "Enter path to the build.bff file [{}]: ".format(default))
@@ -224,6 +234,7 @@ if __name__ == "__main__":
         config["build_bff"] = build_bff_path
 
         # Load build.bff
+        wait_for_file(build_bff_path, time_limit)
         try:
             build = BuildBff(build_bff_path)
             print("Loaded build.bff")
@@ -248,11 +259,14 @@ if __name__ == "__main__":
 
     # Copy custom headers
     _cpp_dir = os.path.join(yyc_boost_dir, "cpp")
+    wait_for_file(path_cpp, time_limit)
     for f in os.listdir(_cpp_dir):
         copy_file(os.path.join(_cpp_dir, f), path_cpp)
 
     # Modify C++ files
+    initial_file_count = 0
     for root, _, files in os.walk(path_cpp):
+        initial_file_count += len(files)
         for fname in files:
             cpp_path = os.path.join(root, fname)
             queue.put((cpp_path, build,))
@@ -279,6 +293,7 @@ if __name__ == "__main__":
             p.join(1)
 
     if queue.empty() and args.close_after_first_build:
-        print('Initial build complete; exiting.')
+        print('First build complete, in which {} files were found; exiting.'
+              .format(initial_file_count))
     else:
-        cprint('Error: all worker processes have exited abnormally!', 'red')
+        cprint('ERROR: all worker processes have exited abnormally!', 'red')

@@ -1,7 +1,14 @@
 import os
+import sys
 import shutil
+from threading import Condition
+from time import perf_counter
+from typing import Optional
 
 from termcolor import cprint
+
+from watchdog.events import FileSystemEventHandler, FileCreatedEvent
+from watchdog.observers import Observer
 
 
 def file_is_cpp(file):
@@ -54,3 +61,43 @@ def copy_file(src, path_cpp):
         pass
     shutil.copyfile(src, dest)
     cprint("done", "green")
+
+
+def wait_for_file(path: str, time_limit: Optional[float]):
+    parents = [path]
+    while not os.path.exists(parents[-1]):
+        parent = os.path.dirname(parents[-1])
+        if parent == parents[-1]: break
+        parents.append(parent)
+    
+    for path, parent in zip(reversed(parents[:-1]), reversed(parents[1:])):
+        if time_limit is None:
+            remaining = Noone
+        else:
+            remaining = time_limit - perf_counter()
+            print('Waiting {:.2f}s for "{}" to appear...'.format(remaining, path))
+        if not wait_for_file_in(path, parent, remaining):
+            cprint('ERROR: "{}" failed to appear in time; aborting.'
+                   .format(path), 'red')
+            sys.exit(1)
+
+
+def wait_for_file_in(path: str, parent: str, timeout: Optional[float]) -> bool:
+    start = perf_counter()
+
+    cond = Condition()
+    class Handler(FileSystemEventHandler):
+        def on_created(self, _event: FileCreatedEvent):
+            if not os.path.exists(path): return
+            with cond: cond.notify_all()
+    observer = Observer()
+    observer.schedule(Handler(), parent, recursive=False)
+    observer.start()
+
+    created = os.path.exists(path)
+    while not created and (timeout is None or perf_counter() < start + timeout):
+        # Wait for 1s at a time to let the main thread to process signals:
+        with cond: created = cond.wait(1)
+
+    observer.stop()
+    return created
