@@ -6,9 +6,12 @@ import signal
 import sys
 import time
 import subprocess
+import inspect
+import traceback
 from subprocess import DEVNULL, CREATE_NO_WINDOW
-from multiprocessing import Process, Queue, cpu_count, freeze_support
+from multiprocessing import Process, Queue, cpu_count, freeze_support, current_process
 from argparse import ArgumentParser
+from queue import Empty as QueueEmpty
 
 from termcolor import cprint
 from watchdog.events import FileSystemEventHandler
@@ -20,7 +23,9 @@ from src.utils import *
 
 
 def handle_signit(*args, **kwargs):
-    cprint("Terminating...", "magenta")
+    if not current_process().daemon:
+        # To avoid duplicates, only print this message from the parent process. 
+        cprint("Terminating...", "magenta")
     sys.exit(0)
 
 signal.signal(signal.SIGINT, handle_signit)
@@ -28,10 +33,14 @@ signal.signal(signal.SIGINT, handle_signit)
 queue = Queue()
 
 
-def process_fn(yyc_boost_dir: str, id: int, queue: Queue):
+def process_fn(yyc_boost_dir: str, id: int, queue: Queue,
+               exit_when_queue_empty: bool = False):
     print(f"Processor ({id}): Started")
     while True:
-        cpp_path, build = queue.get()
+        try:
+            cpp_path, build = queue.get(block = not exit_when_queue_empty)
+        except QueueEmpty:
+            break
         try:
             process_file(id, yyc_boost_dir, cpp_path, build)
         except Exception as e:
@@ -86,6 +95,7 @@ class EventHandler(FileSystemEventHandler):
             if f.readline().startswith(Processor.INCLUDES):
                 return
         queue.put((fpath, build,))
+
 
 def parse_args(*args, **kwds):
     # Apply some cosmetic changes to the help and usage output:
@@ -151,6 +161,8 @@ if __name__ == "__main__":
     freeze_support()
 
     args = parse_args()
+
+    # If "/background" is set, launch as a background process and then exit:
     if args.run_in_background:
         abs_argv0 = os.path.join(os.getcwd(), sys.argv[0])
         if os.path.samefile(abs_argv0, sys.executable):
@@ -161,7 +173,7 @@ if __name__ == "__main__":
             new_argv = [sys.executable] + sys.argv
         else:
             # Unable to determine correct command line to relaunch self.
-            print('Error: failed to launch background process!')
+            cprint('Error: failed to launch background process!', 'red')
             sys.exit(1)
 
         # Ensure that "/close" and "/auto" are set and "/background" is not
@@ -172,12 +184,12 @@ if __name__ == "__main__":
         if all(arg not in new_argv for arg in ('/a', '/auto')):
             new_argv.append('/auto')
 
-        proc = subprocess.Popen(new_argv,
-            stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL,
-            creationflags=CREATE_NO_WINDOW, start_new_session=True
+        proc = subprocess.Popen(
+            new_argv, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL,
+            creationflags=CREATE_NO_WINDOW
         )
         print('Continuing in background as PID {} with command line "{}".'
-              .format(proc.pid, ' '.join(new_argv)))
+               .format(proc.pid, ' '.join(new_argv)))
         sys.exit(0)
 
     if getattr(sys, "frozen", False):
@@ -216,7 +228,8 @@ if __name__ == "__main__":
             build = BuildBff(build_bff_path)
             print("Loaded build.bff")
         except:
-            print('ERROR: Could not load "{}"!'.format(build_bff_path))
+            cprint('ERROR: Could not load "{}":'.format(build_bff_path), 'red')
+            traceback.print_exc()
             sys.exit(1)
 
         # Project info
@@ -244,18 +257,28 @@ if __name__ == "__main__":
             cpp_path = os.path.join(root, fname)
             queue.put((cpp_path, build,))
 
-    event_handler = EventHandler(build)
-    observer = Observer()
-    observer.schedule(event_handler, path_cpp, recursive=True)
-    observer.start()
+    if not args.close_after_first_build:
+        event_handler = EventHandler(build)
+        observer = Observer()
+        observer.schedule(event_handler, path_cpp, recursive=True)
+        observer.start()
 
     processes = []
-
     for i in range(cpu_count()):
-        p = Process(target=process_fn, args=(
-            yyc_boost_dir, i, queue,), daemon=True)
+        bound = inspect.signature(process_fn).bind(
+            yyc_boost_dir=yyc_boost_dir, id=i, queue=queue,
+            exit_when_queue_empty=args.close_after_first_build,
+        )
+        p = Process(target=process_fn, kwargs=bound.arguments, daemon=True)
         p.start()
         processes.append(p)
 
-    while True:
-        time.sleep(1)
+    # Wait for all processes to exit (or wait forever):
+    for p in processes:
+        while p.is_alive():
+            p.join(1)
+
+    if queue.empty() and args.close_after_first_build:
+        print('Initial build complete; exiting.')
+    else:
+        cprint('Error: all worker processes have exited abnormally!', 'red')
