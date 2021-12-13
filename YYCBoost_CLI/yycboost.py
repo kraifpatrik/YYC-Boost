@@ -140,7 +140,8 @@ def parse_args(*args, **kwds):
         help='The path of the "build.bff" file corresponding to the target. If '
              'not specified, the user is prompted to enter a path on the '
              'terminal, unless "/auto" is set, in which case the default value '
-             'of "{}" is used.'.format(BuildBff.PATH_DEFAULT),
+             'of "{}" is used.'
+             .format(BuildBff.PATH_DEFAULT_RAW.replace('%', '%%')),
     )
     main_args.add_argument(
         '-pf', '-pidfile', dest='pidfile_path', nargs='?', metavar='PATH',
@@ -151,12 +152,12 @@ def parse_args(*args, **kwds):
              'otherwise, YYCboost deletes the PID file when exiting normally. '
              'If "PATH" exists, YYCBoost overwrites it. If "-pidfile" is given '
              'without a "PATH" argument, then it defaults to "yycboost.pid" in '
-             'the current user\'s home directory (on Windows: %%USERPROFILE%%).'
+             'the current user\'s home directory (on Windows: %%UserProfile%%).'
     )
     main_args.add_argument(
         '-t', '-timeout', dest='timeout', nargs=1, metavar='SECONDS', type=float,
         help='Close after this many seconds, or stay open until explicitly '
-             'close if SECONDS is 0. If not specified, defaults to {} if '
+             'closed if SECONDS is 0. If not specified, defaults to {} if '
              '"/background" is set, or otherwise to 0.'.format(DEFAULT_TIMEOUT)
     )
     main_args.add_argument(
