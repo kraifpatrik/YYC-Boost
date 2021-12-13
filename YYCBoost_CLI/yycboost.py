@@ -94,15 +94,21 @@ def parse_args(*args, **kwds):
     # Apply some cosmetic changes to the help and usage output:
     class CustomArgumentParser(ArgumentParser):
         def format_usage(self):
-            usage = super(CustomArgumentParser, self).format_usage()
-            return usage.replace('usage: ', 'Usage: ')
+            res = super(CustomArgumentParser, self).format_usage()
+            return res.replace('usage: ', 'Usage: ')
 
         def format_help(self):
-            help = super(CustomArgumentParser, self).format_help()
-            return help.replace('usage: ', 'Usage: ') \
-                       .replace('buildpath PATH', 'buildpath=PATH') \
-                       .replace('timeout SECONDS', 'timeout=SECONDS') \
-                       .replace('pidfile [PATH]', 'pidfile[=PATH]')
+            res = super(CustomArgumentParser, self).format_help()
+            for sname, lname, meta in (
+                ('bp', 'buildpath', 'PATH'), ('pf', 'pidfile', '[PATH]'),
+                ('t', 'timeout', 'SECONDS'), ('l', 'logfile', 'PATH'),
+                ('j', 'threads', 'COUNT')
+            ):
+                e = ('[=%s]' % meta[1:-1]) if meta[0] == '[' else ('=%s' % meta)
+                f = lambda s: s.format(sname, lname, meta, e) 
+                res = res.replace(f('-{0} {2}, -{1} {2}'), f('-{0}, -{1}{3}'))
+                res = res.replace(f('-{0} {2}'),           f('-{0}{3}'))
+            return res.replace('usage: ', 'Usage: ')
 
     arg_parser = CustomArgumentParser(
         prefix_chars='/-', allow_abbrev=False, add_help=False)
@@ -130,31 +136,36 @@ def parse_args(*args, **kwds):
         help='Use default values rather than prompting the user for any input.',
     )
     main_args.add_argument(
-        '-buildpath', dest='build_bff_path', nargs=1, metavar='PATH',
+        '-bp', '-buildpath', dest='build_bff_path', nargs=1, metavar='PATH',
         help='The path of the "build.bff" file corresponding to the target. If '
              'not specified, the user is prompted to enter a path on the '
              'terminal, unless "/auto" is set, in which case the default value '
              'of "{}" is used.'.format(BuildBff.PATH_DEFAULT),
     )
     main_args.add_argument(
-        '-pidfile', dest='pidfile_path', nargs='?', metavar='PATH', const=True,
-        help='Creates a text file at "PATH" containing the main process ID of '
-             'YYCBoost and watches it for changes: if the file is deleted, '
-             'moved, or its contents changed, this acts as a termination '
-             'signal and causes the present instance to exit; otherwise, '
-             'YYCboost deletes the PID file when exiting normally. If "PATH" '
-             'exists, YYCBoost overwrites it. If "-pidfile" is given without '
-             'a "PATH" argument, then it defaults to "yycboost.pid" in the '
-             'current user\'s home directory (on Windows: %USERPROFILE%).'
+        '-pf', '-pidfile', dest='pidfile_path', nargs='?', metavar='PATH',
+        const=True, help='Creates a text file at "PATH" containing the main '
+             'process ID of YYCBoost and watches it for changes: if the file '
+             'is deleted, moved, or its contents changed, this acts as a '
+             'termination signal and causes the present instance to exit; '
+             'otherwise, YYCboost deletes the PID file when exiting normally. '
+             'If "PATH" exists, YYCBoost overwrites it. If "-pidfile" is given '
+             'without a "PATH" argument, then it defaults to "yycboost.pid" in '
+             'the current user\'s home directory (on Windows: %%USERPROFILE%%).'
     )
     main_args.add_argument(
-        '-timeout', dest='timeout', nargs=1, metavar='SECONDS', type=float,
+        '-t', '-timeout', dest='timeout', nargs=1, metavar='SECONDS', type=float,
         help='Close after this many seconds, or stay open until explicitly '
              'close if SECONDS is 0. If not specified, defaults to {} if '
              '"/background" is set, or otherwise to 0.'.format(DEFAULT_TIMEOUT)
     )
     main_args.add_argument(
-        '-logfile', dest='logfile', nargs=1, metavar='PATH',
+        '-j', '-threads', dest='threads', nargs=1, metavar='COUNT', type=int,
+        help='The number of CPU cores to use. If not specified, defaults '
+             'to the total number of cores on the system.',
+    )
+    main_args.add_argument(
+        '-l', '-logfile', dest='logfile', nargs=1, metavar='PATH',
         help='Print status messages to PATH rather than to stdout/err. This is '
              'useful for debugging while the "/background" option is active.'
     )
@@ -189,7 +200,7 @@ if __name__ == "__main__":
 
     # If a log file is configured, open that file (appending, with line
     # buffering), and redirect stdout and stderr to the open file.
-    if args.logfile:
+    if args.logfile and not args.run_in_background:
         sys.stdout = sys.stderr = open(args.logfile[0], 'a', 1)
         if sys.stdout.tell(): print('')
         print('--- Log opened at {} by PID {} ---'
@@ -363,8 +374,9 @@ if __name__ == "__main__":
     observer.schedule(event_handler, path_cpp, recursive=True)
     observer.start()
 
+    process_count = args.threads[0] if args.threads else cpu_count()
     processes = []
-    for i in range(cpu_count()):
+    for i in range(process_count):
         p = Process(target=process_fn, args=(yyc_boost_dir, i, queue),
                     daemon=True)
         p.start()
