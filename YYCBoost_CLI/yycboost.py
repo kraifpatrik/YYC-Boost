@@ -9,8 +9,11 @@ import subprocess
 import traceback
 import atexit
 import threading
+import datetime
 from subprocess import DEVNULL, CREATE_NO_WINDOW
-from multiprocessing import Process, Queue, cpu_count, freeze_support
+from multiprocessing import (
+    Process, Queue, cpu_count, freeze_support, parent_process,
+)
 from argparse import ArgumentParser
 
 from termcolor import cprint
@@ -150,6 +153,11 @@ def parse_args(*args, **kwds):
              'close if SECONDS is 0. If not specified, defaults to {} if '
              '"/background" is set, or otherwise to 0.'.format(DEFAULT_TIMEOUT)
     )
+    main_args.add_argument(
+        '-logfile', dest='logfile', nargs=1, metavar='PATH',
+        help='Print status messages to PATH rather than to stdout/err. This is '
+             'useful for debugging while the "/background" option is active.'
+    )
 
     other_args = arg_parser.add_argument_group('Positional arguments')
     other_args.add_argument(
@@ -168,13 +176,24 @@ def parse_args(*args, **kwds):
 
 
 if __name__ == "__main__":
-    freeze_support()
-
     # Set handler to exit with a message upon keyboard interrupt:
     def handle_sigint(*args, **kwargs):
-        cprint("Terminating...", "magenta")
+        if parent_process() is None: 
+            cprint("Terminating...", "magenta")
         sys.exit(0)
     signal.signal(signal.SIGINT, handle_sigint)
+
+    freeze_support()
+
+    args = parse_args()
+
+    # If a log file is configured, open that file (appending, with line
+    # buffering), and redirect stdout and stderr to the open file.
+    if args.logfile:
+        sys.stdout = sys.stderr = open(args.logfile[0], 'a', 1)
+        if sys.stdout.tell(): print('')
+        print('--- Log opened at {} by PID {} ---'
+              .format(datetime.datetime.now(), os.getpid()))
 
     if getattr(sys, "frozen", False):
         yyc_boost_dir = os.path.dirname(sys.executable)
@@ -185,8 +204,6 @@ if __name__ == "__main__":
     config_fname = "config.json"
     config_fpath = os.path.join(yyc_boost_dir, config_fname)
 
-    args = parse_args()
-
     # What `args.pidfile_path` would be after substituting default values:
     actual_pidfile_path = \
         os.path.join(os.path.expanduser('~'), 'yycboost.pid') \
@@ -195,7 +212,8 @@ if __name__ == "__main__":
     # If "/close" is set, delete any existing PID file and then exit:
     if args.close_existing_instance:
         if os.path.exists(actual_pidfile_path):
-            print('Deleting PID file at "{}"...', end=' ')
+            print('Deleting PID file at "{}"...'.format(actual_pidfile_path),
+                  end=' ')
             os.remove(actual_pidfile_path)
         else:
             print('PID file "{}" does not exist.'.format(actual_pidfile_path),
@@ -234,9 +252,6 @@ if __name__ == "__main__":
                .format(proc.pid, ' '.join(new_argv)))
         sys.exit(0)
 
-    # This Observer instance is used both to monitor the PID file, below,
-    # and to monitor the C++ temp directory, further below:
-
     # If '-pidfile' is set, write the PID file and set appropriate handlers:
     main_thread_exit = threading.Event()
     if args.pidfile_path:
@@ -250,10 +265,15 @@ if __name__ == "__main__":
             def _on_deleted_modified_moved(self, _event):
                 if os.path.exists(actual_pidfile_path):
                     with open(actual_pidfile_path, 'r') as file:
-                        if file.read().strip() == str(os.getpid()): return
+                        text = file.read().strip()
+                        if text == str(os.getpid()): return
+                        exit_message = 'Our PID file at "{}" now contains: ' \
+                            '"{}". Exiting.'.format(actual_pidfile_path, text)
+                else:
+                    exit_message = '"Our PID file at "{}" no longer exists. ' \
+                        'Exiting.'.format(actual_pidfile_path)
                 if not main_thread_exit.is_set():
-                    cprint('Our PID file at "{}" has been deleted or modified; '
-                           'exiting.'.format(actual_pidfile_path), 'yellow')
+                    cprint(exit_message, 'yellow')
                     main_thread_exit.set()
             on_deleted = on_modified = on_moved = _on_deleted_modified_moved
         (pid_observer := Observer()).schedule(

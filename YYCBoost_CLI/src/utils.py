@@ -75,10 +75,12 @@ def wait_for_file(path: str, time_limit: Optional[float]):
         parent, child = os.path.split(parents[-1])
         if parent == parents[-1]: break
         if child: parents.append(parent)
-    
+        else: parents[-1] = parent
+
     for path, parent in zip(reversed(parents[:-1]), reversed(parents[1:])):
         if time_limit is None:
-            remaining = Noone
+            remaining = None
+            print('Waiting for "{}" to appear...'.format(path))
         else:
             remaining = time_limit - perf_counter()
             print('Waiting {:.2f}s for "{}" to appear...'.format(remaining, path))
