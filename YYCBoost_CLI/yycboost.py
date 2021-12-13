@@ -252,8 +252,8 @@ if __name__ == "__main__":
                     with open(actual_pidfile_path, 'r') as file:
                         if file.read().strip() == str(os.getpid()): return
                 if not main_thread_exit.is_set():
-                    cprint('Our PID file at "{}" has been deleted, moved or '
-                           'modified; exiting.', 'yellow')
+                    cprint('Our PID file at "{}" has been deleted or modified; '
+                           'exiting.'.format(actual_pidfile_path), 'yellow')
                     main_thread_exit.set()
             on_deleted = on_modified = on_moved = _on_deleted_modified_moved
         (pid_observer := Observer()).schedule(
@@ -267,6 +267,8 @@ if __name__ == "__main__":
                 if os.path.exists(actual_pidfile_path):
                     with open(actual_pidfile_path, 'r') as file:
                         if file.read().strip() != str(os.getpid()): return
+                    # Set this flag so the above handler isn't triggered:
+                    main_thread_exit.set()
                     os.remove(actual_pidfile_path)
             except IOError:
                 pass
