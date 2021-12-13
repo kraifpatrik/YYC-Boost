@@ -6,14 +6,12 @@ import signal
 import sys
 import time
 import subprocess
-import inspect
 import traceback
+import atexit
+import threading
 from subprocess import DEVNULL, CREATE_NO_WINDOW
-from multiprocessing import (
-    Process, Queue, cpu_count, freeze_support, current_process
-)
+from multiprocessing import Process, Queue, cpu_count, freeze_support
 from argparse import ArgumentParser
-from queue import Empty as QueueEmpty
 
 from termcolor import cprint
 from watchdog.events import FileSystemEventHandler
@@ -24,14 +22,15 @@ from src.processor import Processor
 from src.utils import *
 
 
-def process_fn(yyc_boost_dir: str, id: int, queue: Queue,
-               exit_when_queue_empty: bool = False):
+DEFAULT_TIMEOUT = 300
+
+queue = Queue()
+
+
+def process_fn(yyc_boost_dir: str, id: int, queue: Queue):
     print(f"Processor ({id}): Started")
     while True:
-        try:
-            cpp_path, build = queue.get(block = not exit_when_queue_empty)
-        except QueueEmpty:
-            break
+        cpp_path, build = queue.get(block=True)
         try:
             process_file(id, yyc_boost_dir, cpp_path, build)
         except Exception as e:
@@ -99,7 +98,8 @@ def parse_args(*args, **kwds):
             help = super(CustomArgumentParser, self).format_help()
             return help.replace('usage: ', 'Usage: ') \
                        .replace('buildpath PATH', 'buildpath=PATH') \
-                       .replace('timeout SECONDS', 'timeout=SECONDS')
+                       .replace('timeout SECONDS', 'timeout=SECONDS') \
+                       .replace('pidfile [PATH]', 'pidfile[=PATH]')
 
     arg_parser = CustomArgumentParser(
         prefix_chars='/-', allow_abbrev=False, add_help=False)
@@ -113,13 +113,14 @@ def parse_args(*args, **kwds):
         '/b', '/background', dest='run_in_background', action='store_true',
         help='Create a background process that is detached from the current '
              'terminal (if any) and allows the calling process to continue '
-             'immediately instead of blocking until finished, and closes after '
-             'the first build. Implies "/close" and "/auto".'
+             'immediately instead of blocking until finished. Implies "/auto".'
     )
     main_args.add_argument(
-        '/c', '/close', dest='close_after_first_build', action='store_true',
-        help='Close the yycboost process after the first build; otherwise, '
-             'it stays open until manually closed.',
+        '/c', '/close', dest='close_existing_instance', action='store_true',
+        help='Signal an existing instance of YYCBoost to exit, by deleting '
+             'the file given by the "-pidfile" option, or, if that option '
+             'is absent, the default PID file location. Do not perform any '
+             'code injection and immediately exit after this.',
     )
     main_args.add_argument(
         '/a', '/auto', dest='auto', action='store_true',
@@ -133,11 +134,21 @@ def parse_args(*args, **kwds):
              'of "{}" is used.'.format(BuildBff.PATH_DEFAULT),
     )
     main_args.add_argument(
-        '-timeout', dest='timeout', nargs=1, metavar='SECONDS',
-        type=float, default=[300], help='The number of seconds to wait for '
-            '"build.bff" to appear, if it does not already exist, before '
-            'aborting the process. Defaults to 300 seconds, i.e. 5 minutes, '
-            'if not specified.',
+        '-pidfile', dest='pidfile_path', nargs='?', metavar='PATH', const=True,
+        help='Creates a text file at "PATH" containing the main process ID of '
+             'YYCBoost and watches it for changes: if the file is deleted, '
+             'moved, or its contents changed, this acts as a termination '
+             'signal and causes the present instance to exit; otherwise, '
+             'YYCboost deletes the PID file when exiting normally. If "PATH" '
+             'exists, YYCBoost overwrites it. If "-pidfile" is given without '
+             'a "PATH" argument, then it defaults to "yycboost.pid" in the '
+             'current user\'s home directory (on Windows: %USERPROFILE%).'
+    )
+    main_args.add_argument(
+        '-timeout', dest='timeout', nargs=1, metavar='SECONDS', type=float,
+        help='Close after this many seconds, or stay open until explicitly '
+             'close if SECONDS is 0. If not specified, defaults to {} if '
+             '"/background" is set, or otherwise to 0.'.format(DEFAULT_TIMEOUT)
     )
 
     other_args = arg_parser.add_argument_group('Positional arguments')
@@ -157,17 +168,40 @@ def parse_args(*args, **kwds):
 
 
 if __name__ == "__main__":
-    queue = Queue()
     freeze_support()
 
+    # Set handler to exit with a message upon keyboard interrupt:
     def handle_sigint(*args, **kwargs):
-        if not current_process().daemon:
-            # To avoid duplicates, only print this message from the parent process. 
-            cprint("Terminating...", "magenta")
+        cprint("Terminating...", "magenta")
         sys.exit(0)
     signal.signal(signal.SIGINT, handle_sigint)
 
+    if getattr(sys, "frozen", False):
+        yyc_boost_dir = os.path.dirname(sys.executable)
+    else:
+        yyc_boost_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # TODO: This doesn't seem to be used by anything; should it be deleted?
+    config_fname = "config.json"
+    config_fpath = os.path.join(yyc_boost_dir, config_fname)
+
     args = parse_args()
+
+    # What `args.pidfile_path` would be after substituting default values:
+    actual_pidfile_path = \
+        os.path.join(os.path.expanduser('~'), 'yycboost.pid') \
+        if args.pidfile_path in (None, True) else args.pidfile_path
+
+    # If "/close" is set, delete any existing PID file and then exit:
+    if args.close_existing_instance:
+        if os.path.exists(actual_pidfile_path):
+            print('Deleting PID file at "{}"...', end=' ')
+            os.remove(actual_pidfile_path)
+        else:
+            print('PID file "{}" does not exist.'.format(actual_pidfile_path),
+                  end=' ')
+        print('Exiting.')
+        sys.exit(0)
 
     # If "/background" is set, launch as a background process and then exit:
     if args.run_in_background:
@@ -183,13 +217,14 @@ if __name__ == "__main__":
             cprint('ERROR: failed to launch background process!', 'red')
             sys.exit(1)
 
-        # Ensure that "/close" and "/auto" are set and "/background" is not
-        # set for the background process:
+        # Ensure that "/auto" is set and "/background" is not set for the
+        # background process, and that "-timeout" is set with the default
+        # value if not otherwise specified:
         new_argv = [arg for arg in new_argv if arg not in ('/b', '/background')]
-        if all(arg not in new_argv for arg in ('/c', '/close')):
-            new_argv.append('/close')
         if all(arg not in new_argv for arg in ('/a', '/auto')):
             new_argv.append('/auto')
+        if args.timeout is None:
+            new_argv.append('-timeout={}'.format(DEFAULT_TIMEOUT))
 
         proc = subprocess.Popen(
             new_argv, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL,
@@ -199,38 +234,68 @@ if __name__ == "__main__":
                .format(proc.pid, ' '.join(new_argv)))
         sys.exit(0)
 
-    if getattr(sys, "frozen", False):
-        yyc_boost_dir = os.path.dirname(sys.executable)
-    else:
-        yyc_boost_dir = os.path.dirname(os.path.abspath(__file__))
+    # This Observer instance is used both to monitor the PID file, below,
+    # and to monitor the C++ temp directory, further below:
 
-    config_fname = "config.json"
-    config_fpath = os.path.join(yyc_boost_dir, config_fname)
+    # If '-pidfile' is set, write the PID file and set appropriate handlers:
+    main_thread_exit = threading.Event()
+    if args.pidfile_path:
+        with open(actual_pidfile_path, 'w') as file:
+            file.write(str(os.getpid()))
+        print('Wrote PID file at "{}" with contents "{}".'
+              .format(actual_pidfile_path, os.getpid()))
+
+        # Set handler to exit if PID file deleted, moved or contents changed:
+        class PIDHandler(FileSystemEventHandler):
+            def _on_deleted_modified_moved(self, _event):
+                if os.path.exists(actual_pidfile_path):
+                    with open(actual_pidfile_path, 'r') as file:
+                        if file.read().strip() == str(os.getpid()): return
+                if not main_thread_exit.is_set():
+                    cprint('Our PID file at "{}" has been deleted, moved or '
+                           'modified; exiting.', 'yellow')
+                    main_thread_exit.set()
+            on_deleted = on_modified = on_moved = _on_deleted_modified_moved
+        (pid_observer := Observer()).schedule(
+            PIDHandler(), os.path.dirname(actual_pidfile_path), recursive=False)
+        pid_observer.start()
+
+        # Set handler to delete PID file if unmodified upon exit:
+        @atexit.register
+        def handle_exit():
+            try:
+                if os.path.exists(actual_pidfile_path):
+                    with open(actual_pidfile_path, 'r') as file:
+                        if file.read().strip() != str(os.getpid()): return
+                    os.remove(actual_pidfile_path)
+            except IOError:
+                pass
 
     if args.cpp_dir is not None:
         # Load cache directory from command line (no injection, only cleanup,
         # handy for GMS1.4)
 
-        # This doesn't seem to do anything except print errors at the moment;
-        # what is the "cleanup" referred to in the above comment? Should this be
-        # removed?
+        # TODO: This doesn't seem to do anything except print errors at the
+        # moment; what is the "cleanup" referred to in the above comment?
+        # Should this be removed?
 
         build = None
         path_cpp = args.cpp_dir
     else:
-        # Config
+        # TODO: This doesn't seem to be used for anything. Should it be deleted?
         config = {}
 
-        default = BuildBff.PATH_DEFAULT
-        [build_bff_path] = args.build_bff_path or [None]
-        [timeout] = args.timeout
-        time_limit = perf_counter() + timeout
+        # Configure instance timeout:
+        time_limit = perf_counter() + args.timeout[0] \
+                     if args.timeout and args.timeout[0] else None
 
+        # Configure path of "build.bff":
+        [build_bff_path] = args.build_bff_path or [None]
         if not build_bff_path and not args.auto:
-            build_bff_path = input(
-                "Enter path to the build.bff file [{}]: ".format(default))
+            build_bff_path = input("Enter path to the build.bff file [{}]: "
+                                   .format(BuildBff.PATH_DEFAULT))
         if not build_bff_path:
-            build_bff_path = default
+            build_bff_path = BuildBff.PATH_DEFAULT
         config["build_bff"] = build_bff_path
 
         # Load build.bff
@@ -243,7 +308,7 @@ if __name__ == "__main__":
             traceback.print_exc()
             sys.exit(1)
 
-        # Project info
+        # Print project info:
         path_cpp = build.get_cpp_dir()
         print("Project:", build.get_project_name())
         print("Config:", build.get_config())
@@ -271,29 +336,22 @@ if __name__ == "__main__":
             cpp_path = os.path.join(root, fname)
             queue.put((cpp_path, build,))
 
-    if not args.close_after_first_build:
-        event_handler = EventHandler(build)
-        observer = Observer()
-        observer.schedule(event_handler, path_cpp, recursive=True)
-        observer.start()
+    event_handler = EventHandler(build)
+    observer = Observer()
+    observer.schedule(event_handler, path_cpp, recursive=True)
+    observer.start()
 
     processes = []
     for i in range(cpu_count()):
-        bound = inspect.signature(process_fn).bind(
-            yyc_boost_dir=yyc_boost_dir, id=i, queue=queue,
-            exit_when_queue_empty=args.close_after_first_build,
-        )
-        p = Process(target=process_fn, kwargs=bound.arguments, daemon=True)
+        p = Process(target=process_fn, args=(yyc_boost_dir, i, queue),
+                    daemon=True)
         p.start()
         processes.append(p)
 
-    # Wait for all processes to exit (or wait forever):
-    for p in processes:
-        while p.is_alive():
-            p.join(1)
-
-    if queue.empty() and args.close_after_first_build:
-        print('First build complete, in which {} files were found; exiting.'
-              .format(initial_file_count))
+    while time_limit is None or perf_counter() < time_limit:
+        # It is necessary to sleep for only short periods of time so that the
+        # main thread remains responsive to signals such as SIGINT:
+        if main_thread_exit.wait(1): break
     else:
-        cprint('ERROR: all worker processes have exited abnormally!', 'red')
+        print('Timeout of {:.2f} seconds exceeded; exiting.'
+              .format(args.timeout[0]))

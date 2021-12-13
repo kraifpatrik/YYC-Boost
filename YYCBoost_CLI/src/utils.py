@@ -63,12 +63,18 @@ def copy_file(src, path_cpp):
     cprint("done", "green")
 
 
+"""
+   Block the current thread until a file exists at the given path, blocking for
+   1 second at a time to allow signals to be processed and printing diagnostic
+   messages to `stdout`. If `time_limit` is not `None` and `time.perf_counter()`
+   exceeds `time_limit`, consider this a fatal error and abort the process.
+"""
 def wait_for_file(path: str, time_limit: Optional[float]):
     parents = [path]
     while not os.path.exists(parents[-1]):
-        parent = os.path.dirname(parents[-1])
+        parent, child = os.path.split(parents[-1])
         if parent == parents[-1]: break
-        parents.append(parent)
+        if child: parents.append(parent)
     
     for path, parent in zip(reversed(parents[:-1]), reversed(parents[1:])):
         if time_limit is None:
@@ -82,6 +88,13 @@ def wait_for_file(path: str, time_limit: Optional[float]):
             sys.exit(1)
 
 
+"""
+   Given that `parent` is the parent directory of `path` and that `parent`
+   exists, block the current thread until `path` exists, blocking for 1 second
+   at a time to allow signals to be processed, then return `True`. If
+   `timeout` is not `None` and the file still does not exist after `timeout`
+   seconds, return `False`.
+"""
 def wait_for_file_in(path: str, parent: str, timeout: Optional[float]) -> bool:
     start = perf_counter()
 
