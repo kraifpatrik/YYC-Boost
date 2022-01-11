@@ -1,6 +1,6 @@
 @echo off
 
-if "%PRE_RUN_STEP%" == "1" (
+if "%IGOR_BUILD_ONLY%" == "1" (
    echo "[post_run_step.bat] Called recursively; terminating recursive build."
    :: A non-zero exit code causes the calling instance of Igor.exe to terminate:
    exit 1

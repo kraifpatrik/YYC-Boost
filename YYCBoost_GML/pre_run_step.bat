@@ -1,25 +1,28 @@
 @echo off
 
-if "%PRE_RUN_STEP%" == "1" (
+if "%IGOR_BUILD_ONLY%" == "1" (
     echo "[pre_run_step.bat] Called recursively; skipping."
     exit
 )
-set PRE_RUN_STEP=1
+set IGOR_BUILD_ONLY=1
+
+set PROJECT_CACHE=%YYMACROS_asset_compiler_cache_directory:/=%\%YYMACROS_project_cache_directory_name%
 
 if %YYTARGET_runtime% == YYC (
     echo "[pre_run_step.bat] STEP 1/5: Saving configuration before clean..."
-    mkdir Z:\%YYMACROS_project_cache_directory_name%.save
-    copy Z:\%YYMACROS_project_cache_directory_name%\*.* Z:\%YYMACROS_project_cache_directory_name%.save\
+    mkdir %PROJECT_CACHE%.save
+    copy %PROJECT_CACHE%\*.* %PROJECT_CACHE%.save\
 
     echo "[pre_run_step.bat] STEP 2/5: Cleaning..."
     %YYMACROS_runtimeLocation%\bin\Igor.exe ^
         -j=%NUMBER_OF_PROCESSORS% -options="%YYtempFolder%\build.bff" -v -- Windows Clean
 
     echo "[pre_run_step.bat] STEP 3/5: Restoring configuration after clean..."
-    move Z:\%YYMACROS_project_cache_directory_name%.save\* Z:\%YYMACROS_project_cache_directory_name%\
-    rmdir Z:\%YYMACROS_project_cache_directory_name%.save
+    mkdir %PROJECT_CACHE%
+    move %PROJECT_CACHE%.save\* %PROJECT_CACHE%\
+    rmdir %PROJECT_CACHE%.save
 
-    echo "[pre_run_step.bat] STEP 4/5: Running initial build..."
+    echo "[pre_run_step.bat] STEP 4/5: Running preliminary build..."
     %YYMACROS_runtimeLocation%\bin\Igor.exe ^
         -j=%NUMBER_OF_PROCESSORS% -options="%YYtempFolder%\build.bff" -v -- Windows Run
 
@@ -29,4 +32,4 @@ if %YYTARGET_runtime% == YYC (
         -pidfile="%YYtempFolder%\yycboost.pid" -buildpath="%YYtempFolder%\build.bff"
 )
 
-set PRE_RUN_STEP=
+set IGOR_BUILD_ONLY=
