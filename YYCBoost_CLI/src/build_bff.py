@@ -10,7 +10,9 @@ class BuildBff:
         path (str): Path to the build.bff file.
     """
 
-    PATH_DEFAULT = os.path.expandvars("%LOCALAPPDATA%\\GameMakerStudio2\\GMS2TEMP\\build.bff")
+    PATH_DEFAULT_RAW = r'%LocalAppData%\GameMakerStudio2\GMS2TEMP\build.bff'
+
+    PATH_DEFAULT = os.path.expandvars(PATH_DEFAULT_RAW)
     """ The default path to the build.bff file on Windows. """
 
     def __init__(self, path):
